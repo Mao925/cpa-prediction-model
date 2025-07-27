@@ -3,5 +3,6 @@ pandas
 numpy
 lightgbm
 scikit-learn
+matplotlib
 japanize-matplotlib
-setuptools
+pytrends
