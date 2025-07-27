@@ -75,28 +75,23 @@ def load_and_preprocess_data(file_all, file_30d):
     df.dropna(subset=['日'], inplace=True)
     log_messages.append("✅ 日付データを認識しました。")
 
-    # Googleトレンドのデータを取得 (2キーワードに変更)
     try:
-        pytrends = TrendReq(hl='ja-JP', tz=540) # JST
-        kw_list = ["塾講師 バイト", "塾 バイト"] # ### 変更 ###
+        pytrends = TrendReq(hl='ja-JP', tz=540)
+        kw_list = ["塾講師 バイト", "塾 バイト"]
         start_date = df['日'].min().strftime('%Y-%m-%d')
         end_date = df['日'].max().strftime('%Y-%m-%d')
         timeframe = f'{start_date} {end_date}'
         pytrends.build_payload(kw_list, cat=0, timeframe=timeframe, geo='JP', gprop='')
         trends_df = pytrends.interest_over_time()
 
-        # is_partialがTrueの場合はデータが不完全なため処理しない
         if trends_df.empty or 'isPartial' in trends_df.columns and trends_df['isPartial'].any():
              log_messages.append("⚠️ Googleトレンドのデータが取得できないか、不完全でした。デフォルト値(50)で補完します。")
              df['google_trend'] = 50
         else:
-            # 2つのキーワードの平均を計算
-            trends_df['google_trend'] = trends_df[kw_list].mean(axis=1) # ### 追加 ###
-            
+            trends_df['google_trend'] = trends_df[kw_list].mean(axis=1)
             trends_df = trends_df.reset_index().rename(columns={'date': '日'})
             trends_df = trends_df[['日', 'google_trend']]
             trends_df['日'] = pd.to_datetime(trends_df['日'])
-            
             df = pd.merge(df, trends_df, on='日', how='left')
             df['google_trend'].fillna(method='ffill', inplace=True)
             df['google_trend'].fillna(method='bfill', inplace=True)
@@ -170,7 +165,8 @@ def run_simulation(df_cleaned, sub_models, main_model, input_budget, input_trend
     sim_df.dropna(subset=['予測CPA'], inplace=True)
     return sim_df
 
-def create_plot(sim_df, input_budget, predicted_cv, predicted_cpa):
+# ### 変更 ### : グラフ描画関数に最適点の引数を追加
+def create_plot(sim_df, input_budget, predicted_cv, predicted_cpa, optimal_budget=None, optimal_cv=None, optimal_cpa=None):
     fig, ax1 = plt.subplots(figsize=(12, 7))
     color = 'royalblue'
     ax1.set_xlabel('予算（コスト）[円]', fontsize=14)
@@ -183,10 +179,19 @@ def create_plot(sim_df, input_budget, predicted_cv, predicted_cpa):
     ax2.set_ylabel('予測CPA [円]', fontsize=14, color=color)
     ax2.plot(sim_df['コスト'], sim_df['予測CPA'], linestyle='--', color=color, label='予測CPA', linewidth=2.5)
     ax2.tick_params(axis='y', labelcolor=color)
+    
+    # ユーザー入力の予算をプロット
     if predicted_cv is not None and predicted_cpa is not None:
         ax1.axvline(x=input_budget, color='tomato', linestyle=':', linewidth=2, label=f"入力予算: {input_budget:,.0f}円")
         ax1.plot(input_budget, predicted_cv, 'o', color='tomato', markersize=10, markeredgecolor='white', markeredgewidth=1.5)
         ax2.plot(input_budget, predicted_cpa, 'o', color='tomato', markersize=10, markeredgecolor='white', markeredgewidth=1.5)
+
+    # ### 追加 ### : 最適予算の点をプロット
+    if optimal_budget is not None:
+        ax1.axvline(x=optimal_budget, color='gold', linestyle=':', linewidth=2, label=f"最適予算: {optimal_budget:,.0f}円")
+        ax1.plot(optimal_budget, optimal_cv, 'o', color='gold', markersize=10, markeredgecolor='black', markeredgewidth=1.5)
+        ax2.plot(optimal_budget, optimal_cpa, 'o', color='gold', markersize=10, markeredgecolor='black', markeredgewidth=1.5)
+
     lines, labels = ax1.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
     ax2.legend(lines + lines2, labels + labels2, loc='upper left', fontsize=12, frameon=True, shadow=True)
@@ -224,7 +229,6 @@ with st.sidebar:
         min_value=0,
         max_value=100,
         value=50,
-        # ### 変更 ###
         help="「塾講師 バイト」「塾 バイト」のGoogleトレンド検索数を想定して設定します。100が最大関心時です。"
     )
     recommendation_placeholder = st.empty()
@@ -239,7 +243,7 @@ with st.expander("💡 使い方ガイド"):
     1.  **データの準備**: `コスト`, `コンバージョン数`などに加え、`YYYY-MM-DD`形式の**`日`**カラムを含むCSVファイルを2種類（全期間・直近）用意します。
     2.  **データアップロード**: サイドバーの「データアップロード」セクションから、用意した2つのファイルをアップロードします。
     3.  **条件の設定**: サイドバーで、予測したい「予算」と、将来の「トレンド指数」をスライダーで設定します。
-    4.  **結果の確認**: 入力後、即座に予測結果がメイン画面に表示されます。グラフや詳細情報を確認し、予算計画の参考にしてください。
+    4.  **結果の確認**: 入力後、即座に予測結果がメイン画面に表示されます。**あなたの設定した予算での予測**と、**費用対効果が最も良い「最適予算」**が提案されます。
     """)
 st.markdown("---")
 
@@ -262,6 +266,7 @@ if uploaded_file_all and uploaded_file_30d:
             sub_models, main_model, coefficients = train_models(df_cleaned)
 
         if input_budget is not None and input_budget > 0:
+            # ユーザー入力予算のシミュレーション
             sim_data_user = {'コスト': float(input_budget), 'google_trend': float(input_trend)}
             for feature, model in sub_models.items():
                 predict_df = pd.DataFrame({'コスト': [input_budget], 'google_trend': [input_trend]})
@@ -284,12 +289,39 @@ if uploaded_file_all and uploaded_file_30d:
             with col2:
                 cpa_display = f"{predicted_cpa_user:,.0f} 円" if predicted_cpa_user != float('inf') else "算出不可"
                 st.metric(label="💰 予測CPA", value=cpa_display)
-
-            with st.spinner('グラフを生成中です...'):
+            
+            # ▼▼▼【処理順序を修正】▼▼▼
+            # 先に全体シミュレーションを実行してsim_dfを確定させる
+            with st.spinner('全体シミュレーションと最適点の計算中です...'):
                 sim_df = run_simulation(df_cleaned, sub_models, main_model, input_budget, input_trend)
-                fig = create_plot(sim_df, input_budget, predicted_cv_user, predicted_cpa_user)
+                
+                # sim_df を使って最適点を計算
+                optimal_budget, optimal_cv, optimal_cpa = None, None, None
+                if not sim_df.empty and '予測CPA' in sim_df.columns:
+                    optimal_point = sim_df.loc[sim_df['予測CPA'].idxmin()]
+                    optimal_budget = optimal_point['コスト']
+                    optimal_cv = optimal_point['予測コンバージョン数']
+                    optimal_cpa = optimal_point['予測CPA']
+            
+            # 最適予算の提案を表示
+            st.markdown("---")
+            st.markdown("### 💡 最適予算の提案")
+            if optimal_budget is not None:
+                st.success(
+                    f"""
+                    シミュレーション上、最もCPAが低くなる（費用対効果が高い）のは **予算 {optimal_budget:,.0f} 円** です。
+                    - **その時の予測コンバージョン数**: {optimal_cv:.2f} 件
+                    - **その時の予測CPA**: **{optimal_cpa:,.0f} 円**
+                    """
+                )
+            else:
+                st.info("シミュレーション結果から最適予算を算出できませんでした。")
+
+            # 最後に、確定した情報を使ってグラフを描画
+            fig = create_plot(sim_df, input_budget, predicted_cv_user, predicted_cpa_user, optimal_budget, optimal_cv, optimal_cpa)
             
             tab1, tab2, tab3 = st.tabs(["📊 **予測結果の全体像グラフ**", "📄 **学習データ詳細**", "🧠 **モデルの分析情報**"])
+            # ▲▲▲【ここまで修正】▲▲▲
 
             with tab1:
                 st.pyplot(fig)
