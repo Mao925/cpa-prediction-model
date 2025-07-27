@@ -69,34 +69,38 @@ def load_and_preprocess_data(file_all, file_30d):
     df = pd.concat([df_all, df_30d], ignore_index=True)
     df.columns = df.columns.str.replace(' ', '').str.replace('　', '')
 
-    # 日付カラムの存在チェックと型変換 (「日」カラムに変更)
     if '日' not in df.columns:
         return None, None, "❌ 必要なカラム '日' が見つかりません。CSVに `YYYY-MM-DD` 形式の '日' カラムを追加してください。"
     df['日'] = pd.to_datetime(df['日'], errors='coerce')
     df.dropna(subset=['日'], inplace=True)
     log_messages.append("✅ 日付データを認識しました。")
 
-    # Googleトレンドのデータを取得
+    # Googleトレンドのデータを取得 (2キーワードに変更)
     try:
         pytrends = TrendReq(hl='ja-JP', tz=540) # JST
-        kw_list = ["塾講師バイト"]
-        start_date = df['日'].min().strftime('%Y-%m-%d') # 「日」カラムを参照
-        end_date = df['日'].max().strftime('%Y-%m-%d')   # 「日」カラムを参照
+        kw_list = ["塾講師 バイト", "塾 バイト"] # ### 変更 ###
+        start_date = df['日'].min().strftime('%Y-%m-%d')
+        end_date = df['日'].max().strftime('%Y-%m-%d')
         timeframe = f'{start_date} {end_date}'
         pytrends.build_payload(kw_list, cat=0, timeframe=timeframe, geo='JP', gprop='')
         trends_df = pytrends.interest_over_time()
 
-        if trends_df.empty or kw_list[0] not in trends_df.columns:
-             log_messages.append("⚠️ Googleトレンドのデータが取得できませんでした。デフォルト値(50)で補完します。")
+        # is_partialがTrueの場合はデータが不完全なため処理しない
+        if trends_df.empty or 'isPartial' in trends_df.columns and trends_df['isPartial'].any():
+             log_messages.append("⚠️ Googleトレンドのデータが取得できないか、不完全でした。デフォルト値(50)で補完します。")
              df['google_trend'] = 50
         else:
-            trends_df = trends_df.reset_index().rename(columns={'date': '日', kw_list[0]: 'google_trend'})
+            # 2つのキーワードの平均を計算
+            trends_df['google_trend'] = trends_df[kw_list].mean(axis=1) # ### 追加 ###
+            
+            trends_df = trends_df.reset_index().rename(columns={'date': '日'})
             trends_df = trends_df[['日', 'google_trend']]
             trends_df['日'] = pd.to_datetime(trends_df['日'])
-            df = pd.merge(df, trends_df, on='日', how='left') # 「日」カラムでマージ
+            
+            df = pd.merge(df, trends_df, on='日', how='left')
             df['google_trend'].fillna(method='ffill', inplace=True)
             df['google_trend'].fillna(method='bfill', inplace=True)
-            log_messages.append("✅ Googleトレンドのデータを取得し、結合しました。")
+            log_messages.append(f"✅ Googleトレンドのデータ({', '.join(kw_list)})を取得し、平均値を結合しました。")
 
     except Exception as e:
         log_messages.append(f"⚠️ Googleトレンドの取得に失敗しました ({e})。デフォルト値(50)で補完します。")
@@ -220,7 +224,8 @@ with st.sidebar:
         min_value=0,
         max_value=100,
         value=50,
-        help="「塾講師バイト」のGoogleトレンド検索数を想定して設定します。100が最大関心時です。"
+        # ### 変更 ###
+        help="「塾講師 バイト」「塾 バイト」のGoogleトレンド検索数を想定して設定します。100が最大関心時です。"
     )
     recommendation_placeholder = st.empty()
 
