@@ -1,7 +1,7 @@
-python = "3.11"
 streamlit
 pandas
 numpy
 lightgbm
 scikit-learn
 japanize-matplotlib
+setuptools
