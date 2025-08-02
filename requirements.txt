@@ -4,5 +4,5 @@ numpy
 lightgbm
 scikit-learn
 matplotlib
-japanize-matplotlib>=1.2.0
+japanize-matplotlib
 pytrends
