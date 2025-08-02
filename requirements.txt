@@ -4,5 +4,5 @@ numpy
 lightgbm
 scikit-learn
 matplotlib
-japanize-matplotlib
+matplotlib-fontja
 pytrends
