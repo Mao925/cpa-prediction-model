@@ -1,3 +1,5 @@
+pip install --upgrade japanize-matplotlib
+
 # -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
