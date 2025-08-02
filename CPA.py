@@ -5,7 +5,7 @@ import numpy as np
 import lightgbm as lgb
 from sklearn.linear_model import LinearRegression
 import matplotlib.pyplot as plt
-import japanize_matplotlib
+import matplotlib_fontja
 import warnings
 import io
 
